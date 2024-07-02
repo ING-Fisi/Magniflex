@@ -285,6 +285,11 @@ void init_magniflex_device ( magniflex_reg_t *dev ) {
 	dev->data_req[TEMP_A] = 1;
 	dev->data_req[HUM_A] = 1;
 	dev->data_req[COMPASS] = 1;
+	dev->data_req[BODY_P] = 1;
+	dev->data_req[SLEEP_T] = 1;
+	dev->data_req[BREATH_R] = 1;
+	dev->data_req[HEART_R] = 1;
+	dev->data_req[GOOD_K] = 1;
 
 	dev->smph = xSemaphoreCreateBinary();
 	if( dev->smph == NULL ) {
