@@ -267,8 +267,8 @@ void init_magniflex_device ( magniflex_reg_t *dev ) {
 	dev->pub_int[COMPASS] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
 	dev->pub_int[SLEEP_T] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
 	dev->pub_int[BREATH_R] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
-	dev->pub_int[HEART_R] = dev->pub_int[BREATH_R]; // DBG: different values to see different data JSON.
-	dev->pub_int[GOOD_K] = dev->pub_int[BREATH_R]; // DBG: different values to see different data JSON.
+	dev->pub_int[HEART_R] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
+	dev->pub_int[GOOD_K] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
 	dev->pub_int[TEMP_A] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
 	dev->pub_int[HUM_A] = DEFAULT_PUBINT; // DBG: different values to see different data JSON.
 
@@ -454,16 +454,21 @@ void param_add2_json( param_t *par, char* pname, data_mode_t m, char* s ) {
 // It checks both time intervals and pending requests.
 void param_chck_pub( magniflex_reg_t *dev, char* js_str ) {
 
-	//if(dev->presence == 1)
-	if(true)
+	if(dev->presence == 1)
 	{
-		//strcat(js_str,"{'wifi':[{'ssid':'Vodafone-A37838841','security':'WPA WPA2 PSK','rssi':'-45'}");
-		//dev->presence = 0;
 		for ( int i = 0 ; i < NPARAM ; i++ ) {
 
-			//if((dev->data_req[i] == 1)&&(chck_time_int((long*) &(dev->t_hold[i]), dev->pub_int[i]) == 1))
-			if(dev->data_req[i] == 1)
+			if((dev->data_req[i] == 1)&&(chck_time_int((long*)&(dev->t_hold[i]), dev->pub_int[i]) == 1))
+			//if(dev->data_req[i] == 1)
 			{
+
+				if ( i == SLEEP_T ) { // Update sleep_t value if publish needed.
+					dev->params[i].val.ibuf[0] = 0;
+					if ( dev->start_sleep_t != 0 ) {
+						dev->params[i].val.ibuf[0] = (u32) (get_curtimestamp() - dev->start_sleep_t);
+					}
+				}
+
 				param_add2_json(&(dev->params[i]), (char*) ptyp_str[i], dev->data_mode, js_str);
 			}
 		}

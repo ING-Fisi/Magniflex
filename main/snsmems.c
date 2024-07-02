@@ -344,6 +344,8 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 	float rtbuff[20];
 	int rdlen = 0;
 	float tmp_temp = 0.0f;
+	float hum_temp = 0.0f;
+	float heading = 0.0f;
 	float angle[dev->cnt_nsns], temp[dev->cnt_nsns], hum[dev->cnt_nsns];
 	int32_t accx[dev->cnt_nsns], accy[dev->cnt_nsns], accz[dev->cnt_nsns],
 	magx[dev->cnt_nsns], magy[dev->cnt_nsns], magz[dev->cnt_nsns];
@@ -411,34 +413,48 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 		//		dev->params[TEMP].val.fbuf[NSNS*i+1] = temp[i]; // Assign AVG.
 		tmp_temp += temp[i]/(dev->cnt_nsns);
 
-		if ( (i+1) == magindx ) { // Only for MAG equipped SNSMEMS. Should be central on strips.
-			// FIXME: For this release humidity will be acquired only from MAG equipped device.
+		hum_temp += hum[i]/(dev->cnt_nsns);
 
-			// Assign HUM parameter for each current SNSMEMS.
-			// ---------------------------------------------.
-			if (  hum[i] < dev->params[HUM].val.fbuf[0] ) { // Check for MIN
-				ESP_LOGD(TAG,"HUM value MIN found.");
-				dev->params[HUM].val.fbuf[0] = hum[i];
-			}
-			if ( hum[i] > dev->params[HUM].val.fbuf[2] ) { 	// Check for MAX.
-				ESP_LOGD(TAG,"HUM value MAX found.");
-				dev->params[HUM].val.fbuf[2] = hum[i];
-			}
-			dev->params[HUM].val.fbuf[1] = hum[i]; 			// Assign AVG.
-
-			// Calculate Compass from magnetometer components.
-			// ----------------------------------------------.
-			//			dev->params[MAG].val.ibuf[0] = magx[i];
-			//			dev->params[MAG].val.ibuf[1] = magy[i];
-			//			dev->params[MAG].val.ibuf[2] = magz[i];
-			//--- Heading calculation
-			float heading = atan2f((float) magy[i], (float) magx[i]) * (180.0f / 3.14f);
-			if ( heading < 0 ) {
-				heading += 360.0f;
-			}
-			dev->params[COMPASS].val.ibuf[0] = (int) heading;
-			ESP_LOGW(TAG, "heading: %d", dev->params[COMPASS].val.ibuf[0]);
+		heading = atan2f((float) magy[i], (float) magx[i]) * (180.0f / 3.14f);
+		if ( heading < 0 ) {
+			heading += 360.0f;
 		}
+
+
+
+//		if ( (i+1) == magindx ) { // Only for MAG equipped SNSMEMS. Should be central on strips.
+//			// FIXME: For this release humidity will be acquired only from MAG equipped device.
+//
+//			// Assign HUM parameter for each current SNSMEMS.
+//			// ---------------------------------------------.
+//			if (  hum[i] < dev->params[HUM].val.fbuf[0] ) { // Check for MIN
+//				ESP_LOGD(TAG,"HUM value MIN found.");
+//				dev->params[HUM].val.fbuf[0] = hum[i];
+//			}
+//			if ( hum[i] > dev->params[HUM].val.fbuf[2] ) { 	// Check for MAX.
+//				ESP_LOGD(TAG,"HUM value MAX found.");
+//				dev->params[HUM].val.fbuf[2] = hum[i];
+//			}
+//			dev->params[HUM].val.fbuf[1] = hum[i]; 			// Assign AVG.
+//
+//			// Calculate Compass from magnetometer components.
+//			// ----------------------------------------------.
+//			//			dev->params[MAG].val.ibuf[0] = magx[i];
+//			//			dev->params[MAG].val.ibuf[1] = magy[i];
+//			//			dev->params[MAG].val.ibuf[2] = magz[i];
+//			//--- Heading calculation
+//			float heading = atan2f((float) magy[i], (float) magx[i]) * (180.0f / 3.14f);
+//			if ( heading < 0 ) {
+//				heading += 360.0f;
+//			}
+//			dev->params[COMPASS].val.ibuf[0] = (int) heading;
+//			ESP_LOGW(TAG, "heading: %d", dev->params[COMPASS].val.ibuf[0]);
+//		}
+
+
+
+
+
 
 		if ( dev->prsnc_trsh[i*2] == 0.0f ) { // Not initialized.
 			dev->prsnc_trsh[i*2] = angle[i] - PRESENCE_THRESH;
@@ -452,7 +468,8 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 	}
 
 	dev->params[TEMP].val.fbuf[0] = tmp_temp;
-	ESP_LOGW(TAG,"temp: %.2f", dev->params[TEMP].val.fbuf[0]);
+	dev->params[HUM].val.fbuf[0] = hum_temp;
+	dev->params[COMPASS].val.ibuf[0] = (int) heading;
 
 
 	// Count replying sensors.
