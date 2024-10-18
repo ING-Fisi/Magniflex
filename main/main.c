@@ -53,6 +53,8 @@
 #include "gble.h"
 #include "fsntp.h"
 
+#include "Fisitron.h"
+
 /* --------------------- DEFINES ------------------------- *
  * ------------------------------------------------------- */
 //#define MAX_NSNS 	60
@@ -88,7 +90,10 @@ int used_heap = 0;
 
 #ifdef GIOTCP_PUB
 esp_mqtt_client_handle_t mqttc;
+esp_mqtt_client_config_t mqttcfg;
 #endif
+
+extern esp_mqtt_client_handle_t mqtt_fisitron;
 
 char ts[50];
 char js[PUBSTR_SIZE];
@@ -510,6 +515,7 @@ int chck_req_periodic_pub( magniflex_reg_t *dev, char* pub_js, char* data_js ) {
 		if ( (get_mqtt_service_state() == MQTT_SERV_CONNECTED) || (get_mqtt_service_state() == MQTT_SERV_SUBCRIBED) ) {
 			ESP_LOGW(TAG,"periodic publish %d:\n%s",strlen(pub_js), pub_js);
 			ret = esp_mqtt_client_publish(mqttc, giotc_data_topic, pub_js, 0, 1, 0);
+			ret = esp_mqtt_client_publish(mqtt_fisitron,"/fisitron_topic/log", pub_js, 0, 1, 0);
 		}
 		else {
 			ESP_LOGW(TAG,"chck_req_periodic_pub skip publish: MQTT client not connected.");
@@ -732,9 +738,6 @@ esp_err_t my_mqtt_event_handler( esp_mqtt_event_handle_t event ) {
 
 	case MQTT_EVENT_CONNECTED:
 		ESP_LOGW(TAG, "MQTT_EVENT_CONNECTED");
-		//            mqtt_service_state = MQTT_SERV_CONNECTED;
-		//            msg_id = esp_mqtt_client_subscribe(client, "/devices/prototype1/events", 1);
-		//            ESP_LOGD(TAG, "sent subscribe successful, msg_id=%d", msg_id);
 		ESP_LOGI(TAG, "%s", giotc_data_topic_sub);
 
 		msg_id = esp_mqtt_client_subscribe(client, giotc_data_topic_sub, 1);
@@ -744,14 +747,40 @@ esp_err_t my_mqtt_event_handler( esp_mqtt_event_handle_t event ) {
 	case MQTT_EVENT_DISCONNECTED:
 		ESP_LOGW(TAG, "MQTT_EVENT_DISCONNECTED");
 		set_mqtt_service_state( MQTT_SERV_DISCONNECTED );
-		//            realloc_buff(10);
-		//            mqtt_service_state = MQTT_SERV_DISCONNECTED;
+
+#ifdef GIOTCP_PUB
+
+		//		if(wifi_connected == true)
+		//		{
+		//			esp_mqtt_client_config_t mqttcfg = {
+		//					.uri = GCPIOT_BROKER_URI,
+		//					.event_handle = my_mqtt_event_handler,
+		//					.task_stack = 5*(1024),
+		//			};
+		//			ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
+		//
+		//		}
+
+		if(wifi_connected == true)
+		{
+			//mqtt_app_start( &mqttc, &mqttcfg );
+
+			if(mqtt_app_start( &mqttc, &mqttcfg ) == ESP_FAIL)
+			{
+				esp_restart();
+			}
+		}
+		else
+		{
+			esp_restart();
+		}
+
+#endif
+
+
 		break;
 	case MQTT_EVENT_SUBSCRIBED:
-		//            realloc_buff(8192);
 		ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-		//            msg_id = esp_mqtt_client_publish(client, "/devices/prototype1/events", "data", 0, 1, 0);
-		//            ESP_LOGD(TAG, "sent publish successful, msg_id=%d", msg_id);
 		set_mqtt_service_state( MQTT_SERV_SUBCRIBED );
 		break;
 
@@ -968,6 +997,10 @@ static void stats_task(void *arg)
 void ctrl_tsk( void *vargs ) {
 
 
+
+	fisitron_mqtt_app_start();
+
+
 #ifdef GIOTCP_PUB
 
 	sprintf(giotc_cfg_dev_id,GCPIOT_CLIENT_ID_TEMPLATE,macstr);
@@ -979,12 +1012,18 @@ void ctrl_tsk( void *vargs ) {
 	ESP_LOGI(TAG,"giotc_data_topic_sub %s",giotc_data_topic_sub);
 
 
-	esp_mqtt_client_config_t mqttcfg = {
-			.uri = GCPIOT_BROKER_URI,
-			.event_handle = my_mqtt_event_handler,
-			.task_stack = 5*(1024),
-	};
-	ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
+	//esp_mqtt_client_config_t mqttcfg = {
+	mqttcfg.uri = GCPIOT_BROKER_URI;
+	mqttcfg.event_handle = my_mqtt_event_handler;
+	mqttcfg.task_stack = 5*(1024);
+	//};
+	if(mqtt_app_start( &mqttc, &mqttcfg ) == ESP_FAIL)
+	{
+		esp_restart();
+	}
+
+
+	//ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
 #endif
 
 
@@ -1068,9 +1107,9 @@ void ctrl_tsk( void *vargs ) {
 
 
 		gpio_set_level(GPIO_OUTPUT_IO_0, 1000);
-		vTaskDelay(500/portTICK_PERIOD_MS);
+		vTaskDelay(20/portTICK_PERIOD_MS);
 		gpio_set_level(GPIO_OUTPUT_IO_0, 0);
-		vTaskDelay(500/portTICK_PERIOD_MS);
+		vTaskDelay(20/portTICK_PERIOD_MS);
 
 	}
 
@@ -1097,13 +1136,13 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 	else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
 		wifi_connected = false;
 
-		if (s_retry_num < 5) {
-			esp_wifi_connect();
-			s_retry_num++;
-			ESP_LOGI(TAG, "retry to connect to the Wifi");
-		}
+		//if (s_retry_num < 5) {
+		esp_wifi_connect();
+		//s_retry_num++;
+		ESP_LOGI(TAG, "retry to connect to the Wifi");
+		//}
 
-		ESP_LOGI(TAG,"connect to the Wifi fail");
+		//ESP_LOGI(TAG,"connect to the Wifi fail");
 	}
 
 	else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -1164,9 +1203,15 @@ static void gpio_task_example(void* arg)
 			switch ( io_num )
 			{
 			case RESET_GPIO: {
-				ESP_LOGI(TAG,"Erase NVS flash partition.");
-				nvs_flash_erase();
-				ESP_LOGI(TAG,"Reboot system.  CAZZZO");
+
+				ESP_LOGI(TAG,"RESET PARAMETRI --> REBOOT");
+
+				float tmpf[MAX_NSNS] = {0};
+				memset(tmpf,0,sizeof(tmpf));
+				snsmems_nvs_save_thrsh(tmpf, MAX_NSNS);
+				//ESP_LOGI(TAG,"Erase NVS flash partition.");
+				//nvs_flash_erase();
+				//ESP_LOGI(TAG,"Reboot system.  CAZZZO");
 				esp_restart();
 			} break;
 

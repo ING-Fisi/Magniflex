@@ -3,6 +3,7 @@ gble.c;\
 i2c-driver.c;\
 jsn.c;\
 base64url.c;\
+Fisitron.c;\
 gcpjwt.c;\
 mqtt.c;\
 utility.c;\
