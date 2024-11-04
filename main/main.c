@@ -996,10 +996,7 @@ static void stats_task(void *arg)
 //*********************************************************************************************//
 void ctrl_tsk( void *vargs ) {
 
-
-
 	fisitron_mqtt_app_start();
-
 
 #ifdef GIOTCP_PUB
 
@@ -1021,7 +1018,6 @@ void ctrl_tsk( void *vargs ) {
 	{
 		esp_restart();
 	}
-
 
 	//ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
 #endif
@@ -1048,7 +1044,6 @@ void ctrl_tsk( void *vargs ) {
 
 	ESP_LOGI(TAG, "Run working tasks.");
 
-
 	// Time variables.
 	long print_log_t = T_US;
 	bool connected_sns = false;
@@ -1066,7 +1061,7 @@ void ctrl_tsk( void *vargs ) {
 		}
 
 		// Get saved threshold values.
-		//snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
+		snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
 
 		ESP_LOGI("snsmems_nvs_get_thrsh","prsnc_trsh: %f %f %f", curdev.prsnc_trsh[0],curdev.prsnc_trsh[1],curdev.prsnc_trsh[2]);
 		connected_sns = true;
