@@ -58,8 +58,7 @@
 /* --------------------- DEFINES ------------------------- *
  * ------------------------------------------------------- */
 //#define MAX_NSNS 	60
-#define PUBSTR_SIZE 1024
-#define DATASTR_SIZE 1024
+
 
 
 //****************** GPIO **********************//
@@ -81,19 +80,13 @@ static xQueueHandle gpio_evt_queue = NULL;
 static const char *TAG = "MAIN";
 
 bool wifi_connected = false;
+bool connected_sns = false;
 
 #define PLABEL "certs"
 
 extern int bt_snd_rsp_flag; // TODO: fix on the go, into bt.c
 
 int used_heap = 0;
-
-#ifdef GIOTCP_PUB
-esp_mqtt_client_handle_t mqttc;
-esp_mqtt_client_config_t mqttcfg;
-#endif
-
-extern esp_mqtt_client_handle_t mqtt_fisitron;
 
 char ts[50];
 char js[PUBSTR_SIZE];
@@ -127,13 +120,7 @@ const char cmd_str[NCMD][10] = {
 
 magniflex_reg_t curdev; // Main device register structure.
 
-
 char macstr[20];
-
-
-extern char giotc_cfg_dev_id[500];
-extern char giotc_data_topic[500];
-extern char giotc_data_topic_sub[500];
 
 /* --------------------- FUNCTIONS ----------------------- *
  * ------------------------------------------------------- */
@@ -472,8 +459,6 @@ void param_chck_pub( magniflex_reg_t *dev, char* js_str ) {
 				param_add2_json(&(dev->params[i]), (char*) ptyp_str[i], dev->data_mode, js_str);
 			}
 		}
-
-
 		int slen = strlen(js_str);
 
 		if(slen > 0)
@@ -495,31 +480,14 @@ int chck_req_periodic_pub( magniflex_reg_t *dev, char* pub_js, char* data_js ) {
 	int ret = 0;
 	param_chck_pub(dev, data_js);
 
-
 	if ( strlen(data_js) == 0 ) { // No data available.
 		ESP_LOGI(TAG,"No data available");
 	}
 	else
 	{
 
-		ESP_LOGI(TAG,"data_js (%d):\n%s",strlen(data_js), data_js);
+		ESP_LOGI(TAG,"data_js (%d):%s  [%d]\n",strlen(data_js), data_js,curdev.presence);
 		//	ret = sprintf(pub_js,"{'ts':%ld,'data':", get_curtimestamp());
-		jsn_add_key(pub_js, "ts");
-		int tmp_ts = get_curtimestamp();
-		jsn_set_int_key(pub_js, &tmp_ts, 1, 1, 1, 1);
-		strcat(pub_js,",\"data\":"); // TODO: find better implementation.
-		strcat(pub_js,data_js);
-		strcat(pub_js,"}");
-
-
-		if ( (get_mqtt_service_state() == MQTT_SERV_CONNECTED) || (get_mqtt_service_state() == MQTT_SERV_SUBCRIBED) ) {
-			ESP_LOGW(TAG,"periodic publish %d:\n%s",strlen(pub_js), pub_js);
-			ret = esp_mqtt_client_publish(mqttc, giotc_data_topic, pub_js, 0, 1, 0);
-			ret = esp_mqtt_client_publish(mqtt_fisitron,"/fisitron_topic/log", pub_js, 0, 1, 0);
-		}
-		else {
-			ESP_LOGW(TAG,"chck_req_periodic_pub skip publish: MQTT client not connected.");
-		}
 
 		//print_mgnflx_regs( &curdev );
 		// Reset JSON.
@@ -558,267 +526,6 @@ void dbg_sim_data( magniflex_reg_t *dev ) {
 	}
 	dev->params[TEMP_A].val.fbuf[0] = (20.0f + rand_int_decimal( 5, 1 ));
 	dev->params[HUM_A].val.fbuf[0] = (50.0f + rand_int_decimal( 10, 1 ));
-}
-
-int state_updt ( magniflex_reg_t *dev ) {
-	int ret = 0;
-	char jsstr[1000];
-
-	jsn_add_key(jsstr,"afe_id");
-	jsn_set_int_key(jsstr, (int*) &dev->snsmems, dev->cnt_nsns, 1, 1, 1);
-
-	jsn_add_key(jsstr,"data_mode");
-	jsn_set_str_key(jsstr, data_mode_str[dev->data_mode]);
-
-	jsn_add_array(jsstr,"data_int");
-	for ( int i = 0 ; i < NPARAM ; i++ ) {
-		jsn_add_obj(jsstr, "");
-		jsn_add_key(jsstr,"type");
-		jsn_set_str_key(jsstr, ptyp_str[i]);
-		jsn_add_key(jsstr,"int");
-		jsn_set_int_key(jsstr, (int*) &dev->pub_int[i], 1, 1, 1, 1);
-		jsn_cls(jsstr);
-	}
-	jsn_array_cls(jsstr);
-	jsn_cls(jsstr);
-
-#ifndef PUB_DBG
-	ESP_LOGW(TAG,"state publish %d:\n%s",strlen(jsstr), jsstr);
-#ifdef GIOTCP_PUB
-	if ( (get_mqtt_service_state() == MQTT_SERV_CONNECTED) || (get_mqtt_service_state() == MQTT_SERV_SUBCRIBED) ) {
-		return esp_mqtt_client_publish(mqttc, get_gcpiot_pub_topic_state(), "{\"ciao\":\"ciaoval\"}", 0, 1, 0);
-	}
-	else {
-		ESP_LOGW(TAG,"state_updt skip publish: MQTT client not connected.");
-		return -1;
-	}
-#endif
-#else
-	ESP_LOGW(TAG,"state publish %d:\n%s",strlen(jsstr), jsstr);
-	ret = strlen(jsstr);
-#endif
-	return ret;
-}
-
-#ifdef MQTTCMD_DBG
-char *dbg_cmd_js = "{"
-		"\"data_int\":{"
-		"\"body_p\":5,"
-		"\"temp\":5,"
-		"\"hum\":5,"
-		"\"mag\":5,"
-		"\"sleep_t\":5,"
-		"\"breath_r\":5,"
-		"\"heart_r\":5,"
-		"\"good_k\":5,"
-		"\"temp_a\":5,"
-		"\"hum_a\":5"
-		"},"
-		"\"data_mode\":\"range\","
-		"\"force_pub\":\"true\","
-		"\"data_req\":["
-		"\"body_p\","
-		"\"temp\","
-		"\"hum\","
-		"\"mag\","
-		"\"sleep_t\","
-		"\"breath_r\","
-		"\"heart_r\","
-		"\"good_k\","
-		"\"temp_a\":5,"
-		"\"hum_a\":5"
-		"]"
-		"}";
-#endif
-
-void mqtt_cmd_parse( magniflex_reg_t *dev, char *cmd_js ) {
-	char buffjs[600];
-	buffjs[0] = '{';
-	int stridx = 1; // Index to populate state JSON. Skip first location that is set to '{'.
-	char *tmpjs = &buffjs[100];
-	strcpy(tmpjs, cmd_js);
-	char *savep, *savep2;
-	char *p, *p2;
-	savep = tmpjs;
-	while ((p = strtok_r(savep, ",:\"", &savep))) { // JSON parsing cycle.
-		ESP_LOGV(TAG,"%s",p);
-		for ( int i = 0 ; i < NCMD ; i++ ) { // Parse first level keys.
-			if ( strncmp(p ,cmd_str[i], strlen(cmd_str[i])) == 0 ) {
-				ESP_LOGD(TAG,"Detected key: %s.", cmd_str[i] );
-				ESP_LOGD(TAG," ----------------------------- ");
-				switch (i) { // Different keys handling actions
-				case DATAINT: {
-					p2 = strtok_r((savep + 1), "{}", &savep2); // Skip ':' after 'data_int'.
-					savep = savep2;
-					savep2 = p2;
-					ESP_LOGV(TAG,"%s", savep2);
-					stridx += sprintf((buffjs + stridx),"'data_int':{");
-					while ((p2 = strtok_r(savep2, "{},:\"", &savep2))) {
-						int tmpint = atoi(strtok_r(savep2, "{},:\"", &savep2));
-						stridx += sprintf((buffjs + stridx),"'%s':%d,", p2, tmpint);
-						for (int j = 0 ; j < NPARAM ; j++) { // Cycle to assign received parameter values.
-							if ( strncmp(p2, ptyp_str[j], strlen(ptyp_str[j]) ) == 0 ) {
-								dev->pub_int[j] = tmpint;
-								ESP_LOGD(TAG,"[data_int] Set parameter[%d] '%s' publish interval to: %d", j, ptyp_str[j], dev->pub_int[j]);
-							}
-						}
-					}
-					stridx--; // To remove last ','
-					stridx += sprintf((buffjs + stridx),"},"); // ',' already added for next keys.
-					ESP_LOGV(TAG,"%s",buffjs);
-				} break;
-				case DATAMODE: {
-					p2 = strtok_r(savep, "{,:\"}", &savep);
-					for (int j = 0 ; j < NMODE ; j++) { // Cycle to assign received parameter values.
-						if ( strncmp(p2, data_mode_str[j], strlen(data_mode_str[j]) ) == 0 ) {
-							dev->data_mode = j;
-							ESP_LOGD(TAG,"[data_mode] set to: %s.", data_mode_str[dev->data_mode]);
-						}
-					}
-					stridx += sprintf((buffjs + stridx),"'data_mode':'%s',", p2); // ',' already added for next keys.
-					ESP_LOGV(TAG,"%s",buffjs);
-				} break;
-				case DATAREQ: {
-					p2 = strtok_r((savep + 1), "{}", &savep2); // Skip ':' after 'data_req'.
-					savep = savep2;
-					savep2 = p2;
-					ESP_LOGV(TAG,"%s", savep2);
-					while ((p2 = strtok_r(savep2, "[]{},:\"", &savep2))) {
-						for (int j = 0 ; j < NPARAM ; j++) { // Cycle request flag parameter values.
-							if ( strncmp(p2, ptyp_str[j], strlen(ptyp_str[j]) ) == 0 ) {
-								dev->data_req[j] = 1; // set flag.
-								ESP_LOGD(TAG,"[data_req] Set request flag for parameter[%d] '%s': %d", j, ptyp_str[j], dev->data_req[j]);
-							}
-						}
-					}
-				} break;
-				case FORCE_PUB: {
-					p2 = strtok_r(savep, "{,:\"}", &savep);
-					if ( strncmp(p2, "true", strlen("true") ) == 0 ) {
-						ESP_LOGD(TAG,"force publish: enabled.");
-						force_publish = 1;
-					}
-					else {
-						ESP_LOGD(TAG,"force publish: disabled.");
-						force_publish = 0;
-					}
-					stridx += sprintf((buffjs + stridx),"'force_pub':'%s',", p2); // ',' already added for next keys.
-					ESP_LOGV(TAG,"%s",buffjs);
-				} break;
-				}
-			}
-		}
-	}
-
-	stridx--; // To remove last ','
-	stridx += sprintf((buffjs + stridx),"}"); // Close state update JSON.
-
-	// Update state topic.
-#ifndef PUB_DBG
-	ESP_LOGD(TAG, "update state topic %d:\n%s", strlen(buffjs), buffjs );
-#ifdef GIOTC_PUB
-	if ( (get_mqtt_service_state() == MQTT_SERV_CONNECTED) || (get_mqtt_service_state() == MQTT_SERV_SUBCRIBED) ) {
-		esp_mqtt_client_publish(mqttc, get_gcpiot_pub_topic_state(), buffjs, 0, 1, 0); // Send state update on State topic.
-	}
-	else {
-		ESP_LOGW(TAG,"mqtt_cmd_parse skip publish: MQTT client not connected.");
-	}
-#endif
-#else
-	ESP_LOGW(TAG, "update state topic %d:\n%s", strlen(buffjs), buffjs );
-#endif
-}
-
-esp_err_t my_mqtt_event_handler( esp_mqtt_event_handle_t event ) {
-	esp_mqtt_client_handle_t client = event->client;
-	int msg_id = 0;
-	// your_context_t *context = event->context;
-
-	switch (event->event_id) {
-
-	case MQTT_EVENT_CONNECTED:
-		ESP_LOGW(TAG, "MQTT_EVENT_CONNECTED");
-		ESP_LOGI(TAG, "%s", giotc_data_topic_sub);
-
-		msg_id = esp_mqtt_client_subscribe(client, giotc_data_topic_sub, 1);
-		set_mqtt_service_state( MQTT_SERV_CONNECTED );
-		break;
-
-	case MQTT_EVENT_DISCONNECTED:
-		ESP_LOGW(TAG, "MQTT_EVENT_DISCONNECTED");
-		set_mqtt_service_state( MQTT_SERV_DISCONNECTED );
-
-#ifdef GIOTCP_PUB
-
-		//		if(wifi_connected == true)
-		//		{
-		//			esp_mqtt_client_config_t mqttcfg = {
-		//					.uri = GCPIOT_BROKER_URI,
-		//					.event_handle = my_mqtt_event_handler,
-		//					.task_stack = 5*(1024),
-		//			};
-		//			ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
-		//
-		//		}
-
-		if(wifi_connected == true)
-		{
-			//mqtt_app_start( &mqttc, &mqttcfg );
-
-			if(mqtt_app_start( &mqttc, &mqttcfg ) == ESP_FAIL)
-			{
-				esp_restart();
-			}
-		}
-		else
-		{
-			esp_restart();
-		}
-
-#endif
-
-
-		break;
-	case MQTT_EVENT_SUBSCRIBED:
-		ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-		set_mqtt_service_state( MQTT_SERV_SUBCRIBED );
-		break;
-
-	case MQTT_EVENT_UNSUBSCRIBED:
-		ESP_LOGW(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-		break;
-
-	case MQTT_EVENT_PUBLISHED:
-		ESP_LOGW(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-		break;
-
-	case MQTT_EVENT_DATA:
-		ESP_LOGW(TAG, "MQTT_EVENT_DATA");
-		//            ESP_LOGV(TAG,"TOPIC=%.*s\r\n", event->topic_len, event->topic);
-		//            ESP_LOGV(TAG,"DATA=%.*s\r\n", event->data_len, event->data);
-		if ( strncmp( event->topic, giotc_data_topic_sub, strlen(giotc_data_topic_sub) ) ) {
-			event->data[event->data_len] = 0;
-			mqtt_cmd_parse( &curdev, event->data );
-		}
-		break;
-
-	case MQTT_EVENT_ERROR:
-		ESP_LOGW(TAG, "MQTT_EVENT_ERROR");
-		//            mqtt_service_state = MQTT_SERV_ERROR;
-		//            realloc_buff(10);
-		int mbedtls_err = 0;
-		esp_err_t err = esp_tls_get_and_clear_last_error((esp_tls_error_handle_t)event->error_handle, &mbedtls_err, NULL);
-		ESP_LOGD(TAG, "Last esp error code: 0x%x", err);
-		ESP_LOGD(TAG, "Last mbedtls failure: 0x%x", mbedtls_err);
-
-		set_mqtt_service_state( MQTT_SERV_ERROR );
-		break;
-
-	default:
-		ESP_LOGW(TAG, "Other event id:%d", event->event_id);
-		break;
-	}
-	return ESP_OK;
 }
 
 
@@ -993,65 +700,30 @@ static void stats_task(void *arg)
 }
 #endif
 ///////////////////////////////////////////////////////////
+
+void env_tsk( void *vargs ) {
+
+	ESP_LOGI(TAG, "Run env tasks.");
+
+	while(1)
+	{
+		if (connected_sns == true) {
+
+			acq_snsmems_env_data(&curdev);
+		}
+
+		vTaskDelay(1000/portTICK_PERIOD_MS);
+	}
+
+	vTaskDelete(NULL);
+}
+
 //*********************************************************************************************//
 void ctrl_tsk( void *vargs ) {
 
-
-
-	fisitron_mqtt_app_start();
-
-
-#ifdef GIOTCP_PUB
-
-	sprintf(giotc_cfg_dev_id,GCPIOT_CLIENT_ID_TEMPLATE,macstr);
-	sprintf(giotc_data_topic,DATA_TOPIC_TEMPLATE,macstr);
-	sprintf(giotc_data_topic_sub,DATA_TOPIC_SUB_TEMPLATE,macstr);
-
-	ESP_LOGI(TAG,"giotc_cfg_dev_id %s",giotc_cfg_dev_id);
-	ESP_LOGI(TAG,"giotc_data_topic %s",giotc_data_topic);
-	ESP_LOGI(TAG,"giotc_data_topic_sub %s",giotc_data_topic_sub);
-
-
-	//esp_mqtt_client_config_t mqttcfg = {
-	mqttcfg.uri = GCPIOT_BROKER_URI;
-	mqttcfg.event_handle = my_mqtt_event_handler;
-	mqttcfg.task_stack = 5*(1024);
-	//};
-	if(mqtt_app_start( &mqttc, &mqttcfg ) == ESP_FAIL)
-	{
-		esp_restart();
-	}
-
-
-	//ESP_ERROR_CHECK( mqtt_app_start( &mqttc, &mqttcfg ) );
-#endif
-
-
-#ifdef GIOTCP_PUB
-	long print_heap_tm = get_curtimestamp();
-	while ( (get_mqtt_service_state() < MQTT_SERV_CONNECTED) ) {
-		if ( chck_time_int(&print_heap_tm, 30) == 1 ) { 			// DBG: print memory
-#ifdef EN_HEAP_TASK_INFO
-			esp_dump_per_task_heap_info();
-#endif
-			ESP_LOGI( TAG, 	"free heap: %8u B (NOW), min: %8u B (MIN)",
-					esp_get_free_heap_size(), esp_get_minimum_free_heap_size() );
-			ESP_LOGI( TAG, 	"used heap: %8u B (NOW), min: %8u B (MAX)",
-					used_heap - esp_get_free_heap_size(), used_heap - esp_get_minimum_free_heap_size() );
-		}
-		vTaskDelay(1000/portTICK_PERIOD_MS);
-	}
-#else
-	rgbled_set_state(RGBLED_DEBUG);
-#endif
-
-
 	ESP_LOGI(TAG, "Run working tasks.");
-
-
 	// Time variables.
 	long print_log_t = T_US;
-	bool connected_sns = false;
 
 	curdev.cnt_nsns = snsmems_initilaize(curdev.snsmems);
 
@@ -1066,10 +738,14 @@ void ctrl_tsk( void *vargs ) {
 		}
 
 		// Get saved threshold values.
-		//snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
+		snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
 
 		ESP_LOGI("snsmems_nvs_get_thrsh","prsnc_trsh: %f %f %f", curdev.prsnc_trsh[0],curdev.prsnc_trsh[1],curdev.prsnc_trsh[2]);
 		connected_sns = true;
+
+
+
+		xTaskCreatePinnedToCore(env_tsk, "env_tsk", 1024*5, NULL, 4, NULL, 1/*tskNO_AFFINITY*/);
 	}
 
 
@@ -1090,7 +766,7 @@ void ctrl_tsk( void *vargs ) {
 		curdev.params[TEMP_A].val.fbuf[0] = t;
 
 
-		ESP_LOGI(TAG, "Run working tasks. [%f] [%f]",t,h);
+		//ESP_LOGI(TAG, "Run working tasks. [%f] [%f]",t,h);
 
 
 		if ( curdev.cnt_nsns < 2 ) {
@@ -1117,76 +793,8 @@ void ctrl_tsk( void *vargs ) {
 }
 
 
-static int s_retry_num = 0;
-static void event_handler(void* arg, esp_event_base_t event_base,
-		int32_t event_id, void* event_data)
-{
-	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
 
-		wifi_connected = false;
-
-		esp_wifi_connect();
-	}
-
-	else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
-
-		ESP_LOGI(TAG,"connect to the Wifi success");
-	}
-
-	else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		wifi_connected = false;
-
-		//if (s_retry_num < 5) {
-		esp_wifi_connect();
-		//s_retry_num++;
-		ESP_LOGI(TAG, "retry to connect to the Wifi");
-		//}
-
-		//ESP_LOGI(TAG,"connect to the Wifi fail");
-	}
-
-	else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-		ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-		s_retry_num = 0;
-		wifi_connected = true;
-
-		//xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-	}
-}
-
-
-
-char ota_url_response_buffer[100] = {0};
-esp_err_t _http_event_handler(esp_http_client_event_t *evt)
-{
-	switch (evt->event_id) {
-	case HTTP_EVENT_ERROR:
-		ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
-		break;
-	case HTTP_EVENT_ON_CONNECTED:
-		ESP_LOGD(TAG, "HTTP_EVENT_ON_CONNECTED");
-		break;
-	case HTTP_EVENT_HEADER_SENT:
-		ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
-		break;
-	case HTTP_EVENT_ON_HEADER:
-		ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
-		break;
-	case HTTP_EVENT_ON_DATA:
-		ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-		break;
-	case HTTP_EVENT_ON_FINISH:
-		ESP_LOGD(TAG, "HTTP_EVENT_ON_FINISH");
-		break;
-	case HTTP_EVENT_DISCONNECTED:
-		ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
-		break;
-	}
-	return ESP_OK;
-}
 //*********************************************************************//
-
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
@@ -1203,9 +811,7 @@ static void gpio_task_example(void* arg)
 			switch ( io_num )
 			{
 			case RESET_GPIO: {
-
 				ESP_LOGI(TAG,"RESET PARAMETRI --> REBOOT");
-
 				float tmpf[MAX_NSNS] = {0};
 				memset(tmpf,0,sizeof(tmpf));
 				snsmems_nvs_save_thrsh(tmpf, MAX_NSNS);
@@ -1285,51 +891,6 @@ void gpio_init(void)
 //#define MAX_HTTP_RECV_BUFFER 512
 #define MAX_HTTP_OUTPUT_BUFFER 128
 
-static void ota_request(char* output_buffer,int buffer_len)
-{
-	//****************** HTTP REQUEST *****************************//
-	//char output_buffer[128] = {0};   // Buffer to store response of http request
-	int content_length = 0;
-
-	char otaurl[300];
-	sprintf(otaurl, "http://magniflex.iot-update.datasmart.cloud/?v=%s&idapp=%s&iddevice=%s", fw_ver_str, "mag", macstr);
-	ESP_LOGI(TAG, "OTAURL = %s",otaurl);
-
-
-	esp_http_client_config_t config = {
-			//.url = "http://"CONFIG_EXAMPLE_HTTP_ENDPOINT"/get",
-			.url = otaurl
-	};
-	esp_http_client_handle_t client = esp_http_client_init(&config);
-
-	// GET Request
-	esp_http_client_set_method(client, HTTP_METHOD_GET);
-	esp_err_t err = esp_http_client_open(client, 0);
-	if (err != ESP_OK) {
-		ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
-	} else {
-		content_length = esp_http_client_fetch_headers(client);
-		if (content_length < 0) {
-			ESP_LOGE(TAG, "HTTP client fetch headers failed");
-		} else {
-			int data_read = esp_http_client_read_response(client, output_buffer, buffer_len);
-			if (data_read >= 0) {
-				ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %d",
-						esp_http_client_get_status_code(client),
-						esp_http_client_get_content_length(client));
-				ESP_LOGI(TAG, "RESPONSE = %s",output_buffer);
-				ESP_LOG_BUFFER_HEX(TAG, output_buffer, data_read);
-			} else {
-				ESP_LOGE(TAG, "Failed to read response");
-			}
-		}
-	}
-	esp_http_client_close(client);
-	esp_http_client_cleanup(client);
-
-
-}
-
 //********************************************************************************************************//
 
 void app_main(void) {
@@ -1366,11 +927,6 @@ void app_main(void) {
 
 
 
-
-
-
-
-
 	/* Initialize device main features */
 	ESP_LOGD(TAG,"DEV_INIT: initialize hardware features");
 	esp_err_t err = nvs_flash_init(); // NVS
@@ -1379,11 +935,6 @@ void app_main(void) {
 		err = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK( err );
-
-
-
-
-
 
 
 	// DBG SPIFFS READ CERTS
@@ -1446,17 +997,6 @@ void app_main(void) {
 
 
 	//	//**********************************************************//
-	ESP_LOGI(TAG, "Reading file");
-	FILE* f = fopen("/spiffs/rsa_private.pem", "r");
-	if (f == NULL) {
-		ESP_LOGE(TAG, "Failed to open file for reading");
-	}
-	else
-	{
-		char line[64];
-		fgets(line, sizeof(line), f);
-		fclose(f);
-	}
 	//	// strip newline
 	//	char* pos = strchr(line, '\n');
 	//	if (pos) {
@@ -1471,9 +1011,6 @@ void app_main(void) {
 	//*****************************************************************//
 
 
-
-
-
 	//************************* GPIO INIT ********************************//
 	gpio_init();
 	//************************* SENS INIT ********************************//
@@ -1486,55 +1023,7 @@ void app_main(void) {
 		ESP_LOGE(TAG, "error: init HTS221 temperature");
 	}
 
-	//tcpip_adapter_init();
-
-
-
 	get_mac_str(macstr);
-	//************************* WIFI INIT ********************************//
-
-	//char custom_ssid[30]={"Fisitron Wireless"};
-	////char custom_password[30] ={"055319282055"};
-
-	//**********************************************//
-	ESP_ERROR_CHECK(esp_netif_init());
-	ESP_ERROR_CHECK(esp_event_loop_create_default());
-	esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-	assert(sta_netif);
-
-	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-	//esp_bridge_wifi_set(custom_ssid,custom_password);
-
-	esp_event_handler_instance_t instance_any_id;
-	esp_event_handler_instance_t instance_got_ip;
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-			ESP_EVENT_ANY_ID,
-			&event_handler,
-			NULL,
-			&instance_any_id));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-			IP_EVENT_STA_GOT_IP,
-			&event_handler,
-			NULL,
-			&instance_got_ip));
-
-	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-
-
-	wifi_config_t wifi_cfg;
-	if(esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_cfg) != ESP_OK) {
-		ESP_LOGE(TAG, "Failed to get Wi-Fi configuration in WIFI_STORAGE_FLASH");
-	}
-	else
-	{
-		ESP_LOGI(TAG, "[%s][%s]",wifi_cfg.sta.ssid,wifi_cfg.sta.password);
-	}
-
-	//*****************************************//
-	ESP_ERROR_CHECK(esp_wifi_start());
-
 
 	//********************************************************//
 
@@ -1566,82 +1055,6 @@ void app_main(void) {
 	for ( int i = 0 ; i < NSNS*2 ; i++ ) {
 		curdev.prsnc_trsh[i] = 0.00f;
 	}
-
-	enable_ble();
-
-	//xTaskCreatePinnedToCore(ble_tsk, "ble_tsk", 2048, NULL, 4, NULL, 1/*tskNO_AFFINITY*/);
-	while (wifi_connected == false)
-	{
-		char blemsg[500];
-		if (is_ble_msg() > 0) {
-			if (get_ble_msg(blemsg) < 0) {
-				ESP_LOGE(TAG,"error: read BLE stored message.");
-			}
-			else {
-				ESP_LOGI(TAG,"%s",blemsg);
-				prs_bt_js(blemsg);
-			}
-		}
-		vTaskDelay(500/portTICK_PERIOD_MS);
-	}
-
-
-	long wtime = T_US; 	// FIXME: fast fix.
-	while ( bt_snd_rsp_flag != 1 ) {
-		vTaskDelay(1000/portTICK_PERIOD_MS);
-		if ( (long) (T_US - wtime) > (long) 2*SEC ) { // fast fix.
-			break;
-		}
-	}
-	bt_snd_rsp_flag = 0;
-	vTaskDelay(2000/portTICK_PERIOD_MS);
-
-	disable_ble();
-
-	ESP_LOGI(TAG, "Free heap: %ub, min: %ub", esp_get_free_heap_size(), esp_get_minimum_free_heap_size());
-
-
-	//************************* OTA ************************************//
-
-	char output_buffer[MAX_HTTP_OUTPUT_BUFFER] = {0};
-	ota_request(output_buffer,MAX_HTTP_OUTPUT_BUFFER);
-
-	if(strcmp(output_buffer,"none") != 0)
-	{
-		ESP_LOGI(TAG,"%s",output_buffer);
-
-		esp_http_client_config_t config_ota = {
-				.url = output_buffer,//output_buffer,
-				.cert_pem = NULL,//(char *)server_cert_pem_start,
-				.event_handler = _http_event_handler,
-				.keep_alive_enable = true,
-		};
-
-		esp_err_t ret = esp_https_ota(&config_ota);
-		if (ret == ESP_OK) {
-			esp_restart();
-		} else {
-			ESP_LOGE(TAG, "Firmware upgrade failed");
-		}
-	}
-
-	//************************* SNTP ************************************//
-
-	while (1) {
-		if ( sntp_init_time( DEFAULT_SNTP_SERVER, 20) != 0 ) { // UNIFI_SNTP
-			ESP_LOGW(TAG,"fail obtaining time from specified SNTP server.");
-		}
-		else {
-			break;
-		}
-		if ( sntp_init_time( POOL_PRJCT_SNTP, 20) != 0 ) { // UNIFI_SNTP
-			ESP_LOGW(TAG,"fail obtaining time from specified SNTP server.");
-		}
-		else {
-			break;
-		}
-	}
-
 
 	//*************************************************************************//
 	xTaskCreatePinnedToCore(ctrl_tsk, "ctrl_tsk", 1024*5, NULL, 4, NULL, 1/*tskNO_AFFINITY*/);

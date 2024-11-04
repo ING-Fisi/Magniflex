@@ -44,7 +44,8 @@
 #define THRSH_BLOBS_TAG	"thrsh"
 
 
-
+#define PUBSTR_SIZE 1024
+#define DATASTR_SIZE 1024
 /////////////////////////////////// MAGNIFLEX DEVICE ////////////////////////////////
 #define MAX_NSNS 	10
 
@@ -110,6 +111,7 @@ typedef struct {
 
 const char *fw_ver_str;
 
+int chck_req_periodic_pub( magniflex_reg_t *dev, char* pub_js, char* data_js );
 
 
 ////////////////////////////////////////////////////////////////////////////////////

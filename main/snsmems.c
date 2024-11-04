@@ -47,6 +47,7 @@ typedef enum {
 
 volatile int no_presence_cnt = 0;
 volatile long t_snsmems_wdt = 0;	// Class watchdog.
+extern bool connected_sns;
 
 /* ---------------------- VARIABLES ----------------------- *
  * -------------------------------------------------------- */
@@ -69,6 +70,12 @@ IRAM_ATTR uint8_t i2c_buffered_data[6000*sizeof(float)]; // TODO: disable if not
 
 // BPM holding structure.
 bpm_data_t bpm[NSNS][6];
+
+//*****************************************//
+char js_speed[PUBSTR_SIZE];
+char pjsdata_speed[DATASTR_SIZE];
+
+//****************************
 
 int magindx = 0; // Index to Mag board.
 
@@ -171,8 +178,8 @@ int snsmems_initilaize(snsmems_t *sns) {
 	u32 buf;
 	while ( a < 100 ) {
 		if ( snsmems_rd(a, SNSMEMS_REG(Status_REG),(u8 *) &buf, REG_LEN) == ESP_OK ) {
-			//			snsmems_print_stat(buf);
-			//			snsmems_print_ver(a);
+			snsmems_print_stat(buf);
+			snsmems_print_ver(a);
 			sns[nsns].indx = a;	// assign SNSMEMS I2C address to buffer location.
 			nsns++;
 		}
@@ -222,7 +229,7 @@ int acq_snsmems_raw_data (magniflex_reg_t *dev) {
 
 	// Data acquisition variables.
 	uint8_t rtbuff[100];
-	int axis = 3, freqsamp = 208, blen = 10;//5000;
+	int axis = 3, freqsamp = 208, blen = 5000;
 	int err_cnt = 0;
 
 	// Set data acquisition counters register.
@@ -348,10 +355,7 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 	int32_t accx[dev->cnt_nsns], accy[dev->cnt_nsns], accz[dev->cnt_nsns],
 	magx[dev->cnt_nsns], magy[dev->cnt_nsns], magz[dev->cnt_nsns];
 
-
-	ESP_LOGI(TAG, "acq_snsmems_env_data -> num sensori [%d]",dev->cnt_nsns);
-
-
+	//ESP_LOGI(TAG, "acq_snsmems_env_data -> num sensori [%d]",dev->cnt_nsns);
 	// Read environmental data.
 	rdlen = 4*12;
 	for ( int i = 0 ; i < dev->cnt_nsns ; i++ ) {
@@ -382,9 +386,9 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 		magy[i] = *((int32_t*)&rtbuff[10]);
 		magz[i] = *((int32_t*)&rtbuff[11]);
 
-		ESP_LOGI(TAG, "[%d] angl:%.02f|acc:%d,%d,%d|temp:%.01f|hum:%.01f|mag:%d,%d,%d",
-				dev->snsmems[i].indx, angle[i], accx[i], accy[i], accz[i], temp[i], hum[i],
-				magx[i], magy[i], magz[i] );
+//		ESP_LOGI(TAG, "[%d] angl:%.02f|acc:%d,%d,%d|temp:%.01f|hum:%.01f|mag:%d,%d,%d",
+//				dev->snsmems[i].indx, angle[i], accx[i], accy[i], accz[i], temp[i], hum[i],
+//				magx[i], magy[i], magz[i] );
 
 		// Assign BODY_P parameter for each current SNSMEMS.
 		// ------------------------------------------------.
@@ -452,9 +456,7 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 	}
 
 	dev->params[TEMP].val.fbuf[0] = tmp_temp;
-	ESP_LOGW(TAG,"temp: %.2f", dev->params[TEMP].val.fbuf[0]);
-
-
+	//ESP_LOGW(TAG,"temp: %.2f", dev->params[TEMP].val.fbuf[0]);
 	// Count replying sensors.
 	int rply_sns_cnt = 0;
 	for (int l = 0; l < dev->cnt_nsns; l++) {
@@ -486,12 +488,12 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 	else if ( dev->presence == 1 ) {
 		int chck = 0;
 		for (int e = 0; e < dev->cnt_nsns ; e++ ) {
-			ESP_LOGW(TAG,"angle[%d]: %.2f", e, angle[e]);
+			//ESP_LOGW(TAG,"angle[%d]: %.2f", e, angle[e]);
 			if ( (dev->snsmems[e].iscomm = 1) && (angle[e] > dev->prsnc_trsh[e*2]) && (angle[e] < dev->prsnc_trsh[e*2+1]) ) {
-				ESP_LOGW(TAG,"Threshold[%d]: %.2f, %.2f, %.2f.", e, angle[e], dev->prsnc_trsh[e*2], dev->prsnc_trsh[e*2+1]);
+				//ESP_LOGW(TAG,"Threshold[%d]: %.2f, %.2f, %.2f.", e, angle[e], dev->prsnc_trsh[e*2], dev->prsnc_trsh[e*2+1]);
 				chck++;
 			}else{
-				ESP_LOGE(TAG,"Threshold[%d]: %.2f, %.2f, %.2f.", e, angle[e], dev->prsnc_trsh[e*2], dev->prsnc_trsh[e*2+1]);
+				//ESP_LOGE(TAG,"Threshold[%d]: %.2f, %.2f, %.2f.", e, angle[e], dev->prsnc_trsh[e*2], dev->prsnc_trsh[e*2+1]);
 			}
 		}
 		if (chck == rply_sns_cnt) {
@@ -505,6 +507,12 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 			}
 		}
 	}
+
+
+	memset(js_speed,0,sizeof(js_speed));
+	memset(pjsdata_speed,0,sizeof(pjsdata_speed));
+	chck_req_periodic_pub(dev, js_speed, pjsdata_speed);
+
 
 }
 
@@ -732,7 +740,7 @@ int acq_snsmems_data( magniflex_reg_t *dev ) {
 
 
 
-	acq_snsmems_env_data(dev);
+	//acq_snsmems_env_data(dev);
 
 	// 4. READ READS PERIODS NUMBER
 	// ------------------------------------------------------------------
@@ -771,28 +779,28 @@ int acq_snsmems_data( magniflex_reg_t *dev ) {
 			continue;
 		}
 
-//		ESP_LOGI(TAG, "------------------- board %d ----------------------", dev->snsmems[i].indx);
-//		for ( int j = 0 ; j < 6 ; j++ ) { // DBG.
-//			ESP_LOGI(TAG, "period[%d][%d] = %d.", i, j, periods[i][j]);
-//		}
-//		for ( int j = 0 ; j < 6 ; j++ ) { // DBG.
-//			ESP_LOGI(TAG, "Min/Max[%d][%d] = %d.", i, j, minmax[i][j]);
-//		}
+		//		ESP_LOGI(TAG, "------------------- board %d ----------------------", dev->snsmems[i].indx);
+		//		for ( int j = 0 ; j < 6 ; j++ ) { // DBG.
+		//			ESP_LOGI(TAG, "period[%d][%d] = %d.", i, j, periods[i][j]);
+		//		}
+		//		for ( int j = 0 ; j < 6 ; j++ ) { // DBG.
+		//			ESP_LOGI(TAG, "Min/Max[%d][%d] = %d.", i, j, minmax[i][j]);
+		//		}
 
-//		ESP_LOGI(TAG,"periods:\n"
-//				"\tAccZHigh %d \tAccZLow %d\n"
-//				"\tGyroXHigh %d \tGyroXLow %d\n"
-//				"\tGyroYHigh %d \tGyroYLow %d",
-//				periods[i][0], periods[i][1],
-//				periods[i][2], periods[i][3],
-//				periods[i][4], periods[i][5]);
-//		ESP_LOGI(TAG,"Min/Max:\n"
-//				"\tAccZMax %d \tAccZMin %d \tDelta %d\n"
-//				"\tGyroXMax %d \tGyroXMin %d \tDelta %d\n"
-//				"\tGyroYMax %d \tGyroYMin %d \tDelta %d",
-//				minmax[i][0], minmax[i][1], minmax[i][0]-minmax[i][1],
-//				minmax[i][2], minmax[i][3], minmax[i][2]-minmax[i][3],
-//				minmax[i][4], minmax[i][5], minmax[i][4]-minmax[i][5]);
+		//		ESP_LOGI(TAG,"periods:\n"
+		//				"\tAccZHigh %d \tAccZLow %d\n"
+		//				"\tGyroXHigh %d \tGyroXLow %d\n"
+		//				"\tGyroYHigh %d \tGyroYLow %d",
+		//				periods[i][0], periods[i][1],
+		//				periods[i][2], periods[i][3],
+		//				periods[i][4], periods[i][5]);
+		//		ESP_LOGI(TAG,"Min/Max:\n"
+		//				"\tAccZMax %d \tAccZMin %d \tDelta %d\n"
+		//				"\tGyroXMax %d \tGyroXMin %d \tDelta %d\n"
+		//				"\tGyroYMax %d \tGyroYMin %d \tDelta %d",
+		//				minmax[i][0], minmax[i][1], minmax[i][0]-minmax[i][1],
+		//				minmax[i][2], minmax[i][3], minmax[i][2]-minmax[i][3],
+		//				minmax[i][4], minmax[i][5], minmax[i][4]-minmax[i][5]);
 
 		// BPM holding variables.
 		int nazh = periods[i][0];
@@ -910,16 +918,16 @@ int acq_snsmems_data( magniflex_reg_t *dev ) {
 		return 0;
 	}
 
-//	ESP_LOGW(TAG,"//// Best BPM ////\n"
-//			"\t\tdev:\t|%d\t|\n"
-//			"\t\tmax:\t|%.02f\t|\n"
-//			"\t\tavg:\t|%.02f\t|\n"
-//			"\t\tmin:\t|%.02f\t|\n"
-//			"\t\tk1:\t|%.02f\t|\n"
-//			"\t\tk2:\t|%.02f\t|\n"
-//			"\t\tR:\t|%.02f\t|\n"
-//			"\t\tdif:\t|%.02f\t|\n",
-//			best_bpm_dev, best_bpm.max, best_bpm.avg, best_bpm.min, best_bpm.k1, best_bpm.k2, best_bpm.ratio, fabsf(best_bpm.k1-best_bpm.k2) );
+	//	ESP_LOGW(TAG,"//// Best BPM ////\n"
+	//			"\t\tdev:\t|%d\t|\n"
+	//			"\t\tmax:\t|%.02f\t|\n"
+	//			"\t\tavg:\t|%.02f\t|\n"
+	//			"\t\tmin:\t|%.02f\t|\n"
+	//			"\t\tk1:\t|%.02f\t|\n"
+	//			"\t\tk2:\t|%.02f\t|\n"
+	//			"\t\tR:\t|%.02f\t|\n"
+	//			"\t\tdif:\t|%.02f\t|\n",
+	//			best_bpm_dev, best_bpm.max, best_bpm.avg, best_bpm.min, best_bpm.k1, best_bpm.k2, best_bpm.ratio, fabsf(best_bpm.k1-best_bpm.k2) );
 
 	// Assign HEART parameter for each SNSMEMS.
 	// ----------------------------------------
@@ -984,107 +992,21 @@ extern magniflex_reg_t curdev; // FIXME: use better method to acccess object.
 
 void snsmems_acq_tsk( void *vargs ) {
 	//esp_task_wdt_add(NULL);
-
-	// Time variables.
-	long print_log_t = T_US;
-	bool connected_sns = false;
-
-	curdev.cnt_nsns = snsmems_initilaize(curdev.snsmems);
-
-	if ( curdev.cnt_nsns < 1 ) {
-		ESP_LOGW(TAG,"no snsmems detected, try enumaration.");
-	}
-	else
-	{
-		//rgbled_set_state(RGBLED_OFF);
-		ESP_LOGI("snsmems_acq_tsk","detected: %d SNSMEMS", curdev.cnt_nsns);
-		for ( int i = 0; i < curdev.cnt_nsns; i++ ) {
-			ESP_LOGI(TAG,"sns_addr[%d]: %02x(%d)", i, curdev.snsmems[i].indx, curdev.snsmems[i].indx);
-		}
-
-		// Get saved threshold values.
-		snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
-
-		ESP_LOGI("snsmems_nvs_get_thrsh","prsnc_trsh: %f %f %f", curdev.prsnc_trsh[0],curdev.prsnc_trsh[1],curdev.prsnc_trsh[2]);
-
-		connected_sns = true;
-
-	}
-
-#ifdef USE_PERIOD_CIRCBUF
-	period_buf_init();
-#endif
+	ESP_LOGI(TAG, "snsmems_acq_tsk tasks START");
 
 	while (1) {
-
 
 		if(connected_sns == true)
 		{
-			acq_snsmems_data(&curdev);
+			acq_snsmems_env_data(&curdev);
 		}
 
+		//ESP_LOGI(TAG, "snsmems_acq_tsk tasks");
 
-		ESP_LOGI(TAG, "snsmems_acq_tsk tasks");
-
-		vTaskDelay(500/portTICK_PERIOD_MS);
+		vTaskDelay(1000/portTICK_PERIOD_MS);
 
 	}
 
-	while (1) {
-		esp_task_wdt_reset();
-		t_snsmems_wdt = T_US;	// Reset class watchdog.
-
-		while ( (en_acq_snsmemes == 0) ) {
-			esp_task_wdt_reset();
-			if ( chck_time_int(&print_log_t, 10) == 1 ) {
-				ESP_LOGI(TAG,"Snsmems acquisition task idle.");
-			}
-			vTaskDelay(500/portTICK_PERIOD_MS);
-		}
-
-		if ( curdev.cnt_nsns < 1 ) {
-			ESP_LOGW(TAG,"no snsmems detected, try enumaration.");
-			snsmems_en_cmd(0);
-			vTaskDelay(500/portTICK_PERIOD_MS);
-			curdev.cnt_nsns = snsmems_initilaize(curdev.snsmems);
-			if ( curdev.cnt_nsns > 0 ) {
-				//rgbled_set_state(RGBLED_OFF);
-				ESP_LOGI("snsmems_acq_tsk","detected: %d SNSMEMS", curdev.cnt_nsns);
-				for ( int i = 0; i < curdev.cnt_nsns; i++ ) {
-					ESP_LOGI(TAG,"sns_addr[%d]: %02x(%d)", i, curdev.snsmems[i].indx, curdev.snsmems[i].indx);
-				}
-				//rgbled_set_state(RGBLED_DEBUG);
-
-				// Get saved threshold values.
-				snsmems_nvs_get_thrsh(curdev.prsnc_trsh);
-
-			}
-			else {
-				//rgbled_set_state(RGBLED_NO_SENSOR);
-			}
-		}
-		else {
-			if ( acq_snsmems_data(&curdev) < 0 ) {
-				ESP_LOGW(TAG, "retry initialize sensors.");
-				snsmems_en_cmd(0);
-				vTaskDelay(500/portTICK_PERIOD_MS);
-				curdev.cnt_nsns = snsmems_initilaize(curdev.snsmems);
-				if ( curdev.cnt_nsns > 0 ) {
-					//rgbled_set_state(RGBLED_OFF);
-					ESP_LOGI("snsmems_acq_tsk","detected: %d SNSMEMS", curdev.cnt_nsns);
-					for ( int i = 0; i < curdev.cnt_nsns; i++ ) {
-						ESP_LOGI(TAG,"sns_addr[%d]: %02x(%d)", i, curdev.snsmems[i].indx, curdev.snsmems[i].indx);
-					}
-					//rgbled_set_state(RGBLED_DEBUG);
-				}
-				else {
-					//rgbled_set_state(RGBLED_NO_SENSOR);
-				}
-			}
-		}
-
-		vTaskDelay(200/portTICK_PERIOD_MS);
-	}
 }
 
 int snsmems_nvs_save_thrsh(float *thresh, int size) {
