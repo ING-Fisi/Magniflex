@@ -233,7 +233,7 @@ int acq_snsmems_raw_data (magniflex_reg_t *dev) {
 	int err_cnt = 0;
 
 	// Set data acquisition counters register.
-	ESP_LOGI(TAG,"Try one-shot.");
+	//ESP_LOGI(TAG,"Try one-shot.");
 	memset(rtbuff, 0, 4);
 	u16 *lendata = (uint16_t*) &rtbuff[0];
 	*lendata = (u16) blen;
@@ -252,7 +252,7 @@ int acq_snsmems_raw_data (magniflex_reg_t *dev) {
 		dev->snsmems[i].iscomm = 1;
 	}
 	// Reset trigger [on rising edge].
-	ESP_LOGI(TAG,"Reset trigger.");
+	//ESP_LOGI(TAG,"Reset trigger.");
 	memset(rtbuff, 0, 4);
 	err_cnt = 0;
 	for ( int i = 0 ; i < dev->cnt_nsns ; i++ ) {
@@ -268,7 +268,7 @@ int acq_snsmems_raw_data (magniflex_reg_t *dev) {
 		dev->snsmems[i].iscomm = 0;
 	}
 	// Trigger broadcast.
-	ESP_LOGI(TAG,"Broadcast trigger acquisition.");
+	//ESP_LOGI(TAG,"Broadcast trigger acquisition.");
 #ifdef GET_RAWDATA
 	memset(i2c_buffered_data,0,sizeof(blen));
 #endif
@@ -280,17 +280,9 @@ int acq_snsmems_raw_data (magniflex_reg_t *dev) {
 
 	// Wait for acquisition without I2C	transaction to avoid electrical noise.
 	int wait = (int) (blen/(freqsamp*axis) + 1);
-	ESP_LOGI(TAG,"Wait for acquisition: %d s.", wait);
+	ESP_LOGE(TAG,"Wait for acquisition: %d s.", wait);
 	long tmt = T_US;
-	while ( (long) (T_US - tmt) < (long) (wait*SEC) ) {
-		//		ESP_LOGI(TAG,"wait for acquisition: %d%%", (int) ((float) j/wait*100) );
-		//		for ( int i = 0 ; i < dev->cnt_nsns ; i++ ) {
-		//			if ( i2c_master_read_slave_reg(I2C_PORT_NUM, dev->snsmems[i], (8*4), rtbuff, 4) != ESP_OK ) {
-		//				ESP_LOGE(TAG,"error: i2c write fail. [device %d]", dev->snsmems[i]);
-		//			}
-		//			ESP_LOGD(TAG,"ret [%d]: %d %d %d %d", i, rtbuff[0], rtbuff[1], rtbuff[2], rtbuff[3] );
-		//		}
-		////		vTaskDelay((wait*1000)/portTICK_PERIOD_MS);
+	while ( (long) (T_US - tmt) < (long) (wait * SEC) ) {
 		t_snsmems_wdt = T_US;
 		vTaskDelay(1000/portTICK_PERIOD_MS);
 	}
