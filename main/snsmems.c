@@ -476,6 +476,9 @@ void acq_snsmems_env_data ( magniflex_reg_t *dev ) {
 				break;
 			}
 		}
+
+		dev->params[HEART_R].val.fbuf[1] = 0;
+		dev->params[BREATH_R].val.fbuf[1] = 0;
 	}
 	else if ( dev->presence == 1 ) {
 		int chck = 0;
